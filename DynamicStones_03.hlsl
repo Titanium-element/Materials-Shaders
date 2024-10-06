@@ -5,14 +5,7 @@ struct Helpers
     {
         return frac(sin(seed) * 34567.8901);
     }
-    float3 permute(float3 x) 
-    { 
-        return fmod(((x*34.0)+1.0)*x, 289.0); 
-    }
-    float3 fade(float3 t) 
-    { 
-        return t*t*t*(t*(t*6.0-15.0)+10.0); 
-    }
+
     float3 rotate(float3 p, float angleX, float angleY, float angleZ)
     {
         float3x3 rotX = float3x3(
@@ -71,46 +64,12 @@ struct Helpers
 struct SDFElements
 {
     Helpers helper;
-    float perlinNoise(float3 p)
-    {
-        float3 Pi = floor(p);
-        float3 Pf = p - Pi;
-        Pi = fmod(Pi, 289.0);
-        float3 f = helper.fade(Pf);
-        
-        float n000 = dot(helper.permute(Pi + float3(0.0, 0.0, 0.0)), Pf);
-        float n001 = dot(helper.permute(Pi + float3(0.0, 0.0, 1.0)), Pf - float3(0.0, 0.0, 1.0));
-        float n010 = dot(helper.permute(Pi + float3(0.0, 1.0, 0.0)), Pf - float3(0.0, 1.0, 0.0));
-        float n100 = dot(helper.permute(Pi + float3(1.0, 0.0, 0.0)), Pf - float3(1.0, 0.0, 0.0));
-        float n011 = dot(helper.permute(Pi + float3(0.0, 1.0, 1.0)), Pf - float3(0.0, 1.0, 1.0));
-        float n101 = dot(helper.permute(Pi + float3(1.0, 0.0, 1.0)), Pf - float3(1.0, 0.0, 1.0));
-        float n110 = dot(helper.permute(Pi + float3(1.0, 1.0, 0.0)), Pf - float3(1.0, 1.0, 0.0));
-        float n111 = dot(helper.permute(Pi + float3(1.0, 1.0, 1.0)), Pf - float3(1.0, 1.0, 1.0));
-
-        float3 n00 = lerp(n000, n100, f.x);
-        float3 n01 = lerp(n001, n101, f.x);
-        float3 n10 = lerp(n010, n110, f.x);
-        float3 n11 = lerp(n011, n111, f.x);
-        
-        float3 n0 = lerp(n00, n10, f.y);
-        float3 n1 = lerp(n01, n11, f.y);
-        
-        return lerp(n0, n1, f.z); 
-    }
     float boxSDF(float3 p, float3 b)
     {
         float3 side = abs(p) - b;
         return length(max(side, 0.0)) + min(max(side.x, max(side.y, side.z)), 0.0);
     }
-    float hexagonalPrismSDF (float3 p, float2 h)
-    {
-        const float3 k = float3(-0.8660254, 0.5, 0.57735);
-        p = abs(p);
-        p.xy -= 2.0 * min(dot(k.xy, p.xy), 0.0) * k.xy;
-        float2 d = float2(length(p.xy - float2(clamp(p.x, -k.z * h.x, k.z * h.x), h.x)) * sign(p.y - h.x), p.z - h.y);
-        return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
-    }
-    float sphereSDF(float3 p, float radius)
+     float sphereSDF(float3 p, float radius)
     {
         return length(p) - radius;
     }
@@ -122,7 +81,7 @@ struct SDFElements
 struct sdfShape
 {
     SDFElements sdfElement;
-    float resultedSDF (float3 p, float radius, float distortions, float distortionStrength, float boxAmount, float3 objPos)
+    float resultedSDF (float3 p, float radius,  float boxAmount, float3 objPos)
     {
         const float PI2 = 6.283185;
         float step = PI2 / boxAmount ;
@@ -166,7 +125,7 @@ const float3 moss3 = float3(0.02, 0.15, 0.01) * 0.5 ;
 const float treshold = 0.01;
 const float boxes = 12.0;
 const float3 sphereCenter = float3(0.0, 0.0, 0.0);
-float epsilon = 0.001;
+const float epsilon = 0.001;
 const float3 F0 = float3(0.04, 0.04, 0.04);
 
 float3 rayOrigin = (viewDir - worldPos);
@@ -174,22 +133,18 @@ float3 rayDir =  normalize(viewDir);
 
 float rand = sdf.sdfElement.helper.randShape(objPos.x + objPos.y + objPos.z) % 10;
 
-float noiseScale = 0.2;       
-float noiseStrength = lerp(0.01, 0.02, rand);
-epsilon *= 1.0 + noiseStrength;
-
 for (int i = 0; i < 100; i++) 
 {
     float3 pos = (rayOrigin - sphereCenter);
-    float noiseValue = 0.0;
 
-    float distance = sdf.resultedSDF(pos , sphereRadius, noiseValue, noiseStrength, boxes, objPos);
+    float distance = sdf.resultedSDF(pos , sphereRadius,  boxes, objPos);
 
     if (distance < treshold)
     {
-        float3 N = normalize(float3(sdf.resultedSDF(float3(pos.x + epsilon, pos.y, pos.z), sphereRadius, noiseValue, noiseStrength, boxes, objPos) - sdf.resultedSDF(float3(pos.x - epsilon, pos.y, pos.z), sphereRadius, noiseValue, noiseStrength, boxes, objPos),
-                                        sdf.resultedSDF(float3(pos.x, pos.y + epsilon, pos.z), sphereRadius, noiseValue, noiseStrength, boxes, objPos) - sdf.resultedSDF(float3(pos.x, pos.y - epsilon, pos.z), sphereRadius, noiseValue, noiseStrength, boxes, objPos),
-                                        sdf.resultedSDF(float3(pos.x, pos.y, pos.z + epsilon), sphereRadius, noiseValue, noiseStrength, boxes, objPos) - sdf.resultedSDF(float3(pos.x, pos.y, pos.z - epsilon), sphereRadius, noiseValue, noiseStrength, boxes, objPos)));
+
+        float3 N = normalize(float3(sdf.resultedSDF(float3(pos.x + epsilon, pos.y, pos.z), sphereRadius,  boxes, objPos) - sdf.resultedSDF(float3(pos.x - epsilon, pos.y, pos.z), sphereRadius,  boxes, objPos),
+                                        sdf.resultedSDF(float3(pos.x, pos.y + epsilon, pos.z), sphereRadius, boxes, objPos) - sdf.resultedSDF(float3(pos.x, pos.y - epsilon, pos.z), sphereRadius,boxes, objPos),
+                                        sdf.resultedSDF(float3(pos.x, pos.y, pos.z + epsilon), sphereRadius,  boxes, objPos) - sdf.resultedSDF(float3(pos.x, pos.y, pos.z - epsilon), sphereRadius, boxes, objPos)));
         
         float3 normal = abs(N);
         normal *= normal * normal * normal;
@@ -247,7 +202,6 @@ for (int i = 0; i < 100; i++)
 
         Lo = (kD * albedo / 3.14 + specular) * radiance * NdotL;
         //
-
         float ao = aoMap.g;
         float3 ambient = float3(0.01, 0.01, 0.01) * albedo * ao;
         float3 colour = ambient + Lo;
@@ -267,7 +221,9 @@ for (int i = 0; i < 100; i++)
         mossColour = ambient + Lo;
 
         opacityMask = 1.0;
-        return lerp(colour, mossColour, amount) * pow(cracks, 4.0); 
+        return lerp(colour, mossColour, amount) * cracks * cracks * cracks; 
+
+        break;
     }
 
     rayOrigin += rayDir * distance;
